@@ -130,7 +130,7 @@ def m3u8(u):
         return 404
     u2 = tsu('#EXT-X-STREAM-INF','\s(.*m3u8)',u,doc) #判断二级列表
     if u2 != u:doc = requests.get(u2,headers=head,timeout=5).text
-    re.compile('(#EXT-X-DISCONTINUITY.*?#EXT-X-DISCONTINUITY)',re.S).sub('\1',doc) #清除广告插入
+    doc=re.compile('#EXT-X-DISCONTINUITY.*?#EXT-X-DISCONTINUITY',re.S).sub('',doc) #清除广告插入
     vals = re.compile('\s(.*\.[A-z]+.*)\s').findall(doc) #获取key,ts链接
     k = tsu('#EXT-X-KEY','"(.*\.key)"',u2,vals[0]) #判断是否加密
     if k == u2:
