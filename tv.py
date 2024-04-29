@@ -147,7 +147,7 @@ def m3u8(u):
     ts_url = tsu('.',r'.*\.\w+',u2,vals[1]) #获取ts切片链接
     data['host'] = re.compile('.*//.*?/').findall(ts_url)[0] #存储切片host[]
     data['uri'] = re.compile(r'\w/(.*/)').findall(ts_url)[0] #存储切片uri[]
-    tst = re.compile(r'#EXTINF:(.*?),\s+(.*?)(\w+\.\w+)\s$',re.M).findall(doc)
+    tst = re.compile(r'#EXTINF:(.*?),\s+(.*?)(\w+\.\w+)\s',re.M).findall(doc)
     ts = tss(tst[0][2]) #分析ts切片名称组合
     tst = [(float(x),z.split('.')[0]) for x,y,z in tst if y == tst[0][1]] #去除插入的广告，根据第一个切片路径判断
     if re.search(r'\w*?\d{3,}$',tst[0][1]):tst = [(x,y) for x,y in tst if y[:-3]==tst[0][1][:-3]] #去除同链接广告
