@@ -1,255 +1,218 @@
 <!doctype html>
 <html>
 <head>
-	<title>直播台</title>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<script src="https://cdn.staticfile.org/vue/3.0.5/vue.global.js"></script>
-	<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
-	<style>
-	body {margin: 0;padding: 0; height: 100vh; background: linear-gradient(45deg, #ff00cc, #6666ff, #00ffcc, #ffcc00);background-size: 400% 400%; animation: gradientAnimation 15s ease infinite;}
-    @keyframes gradientAnimation { 0% {background-position: 0% 50%; } 50% {background-position: 100% 50%;} 100% { background-position: 0% 50%;}}
-    .hans-container {position: fixed;bottom: 0px;width: 100%;height: 120px;z-index: -1;}
-    .hans-parallax>use{animation:hans-wave-move 12s linear infinite}
-    .hans-parallax>use:nth-child(1){animation-delay:-2s}
-    .hans-parallax>use:nth-child(2){animation-delay:-2s;animation-duration:5s}
-    .hans-parallax>use:nth-child(3){animation-delay:-4s;animation-duration:3s}
-    @keyframes hans-wave-move{0%{transform:translate(-90px,0)}100%{transform:translate(85px,0)}}
-
-	#apptv {width:93%;margin: auto;}
-	label,button {margin: 5px 15px 7px 0;}
-	textarea,table {width: 100%;max-width: 780px;}
-	th,td,input {text-align:center;}
-	td input,td button {width: 95%;margin: 0;}
-	.nav div {display: inline-block; margin: 5px 10px;padding: 5px 8px;}
-	.active { border-radius: 5px;border: 2px solid black;}
-	.selected { background-color:gray; }
-	</style>
+  <title>直播台</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="http://www.qianzai56.com:88/vue.global.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    body {margin: 0; padding: 0; height: 100vh; background: linear-gradient(45deg, #ff00cc, #6666ff, #00ffcc, #ffcc00); background-size: 400% 400%; animation: gradientAnimation 15s ease infinite; }
+    @keyframes gradientAnimation {0% {background-position: 0% 50%; } 50% {background-position: 100% 50%; } 100% {background-position: 0% 50%; } }
+    #apptv {width: 93%; margin: 0 auto; }
+    label, button {margin: 5px 15px 7px 0; }
+    textarea, table {width: 100%; max-width: 780px; }
+    th, td {text-align: center; }
+    td input, td button {width: 95%; margin: 0; }
+    .nav div {display: inline-block; margin: 5px 10px; padding: 5px 8px; }
+    .active {border-radius: 5px; border: 2px solid black; }
+    .selected {background-color: gray; }
+  </style>
 </head>
 <body>
-	<div id="apptv">
-		<h1>直播管理</h1>
-		<div class="nav" @click="tabs">
-			<div id="tab1" :class="{ 'active': tab == 'tab1' }">直播列表</div>
-			<div id="tab2" :class="{ 'active': tab == 'tab2' }">添加节目</div>
-			<div id="tab3" :class="{ 'active': tab == 'tab3' }" @click="addauto">管理节目</div>
-		</div>
-		<div id="nav-tab">
-			<div v-if="tab =='tab1'">
-				<div><label style="padding:0 10px;">最近更新日期：{{ txt.update }}</label></div>
-				<div>
-					<button @click="newtv">自建频道</button>
-					<button @click="check">直播源检测</button>
-					<button @click="cleartxt">清空</button>
-				</div>
-				<textarea rows="28" v-model="txt.lives" placeholder="多行文本输入……"></textarea>
-			</div>
-			<div v-if="tab =='tab2'">
-				<div>
-					<label>名称:</label>
-					<input type="text" v-model="adds.cnname" required placeholder="节目中文名称……">	
-				</div>
-				<div>
-					<label>索引:</label>
-					<input type="text" v-model="adds.name" required placeholder="字母数字命名……">
-				</div>
-				<div>
-					<label>分组:</label>
-					<input type="text" v-model="adds.zu" placeholder="频道名称……">
-				</div>
-				<div>
-					<div style="margin:8px 0;">
-						<span style="padding-right: 130px;">请写入完整地址</span>
-						<button @click="add">提交</button>
-						<button @click="clear">清空</button>
-						<div>{{ tips }}</div>
-					</div>
-					<textarea rows="25" v-model="adds.m3u" placeholder="仅支持m3u8类型"></textarea>
-				</div>
-			</div>
-			<div v-if="tab =='tab3'">
-				<div>
-					<input style="padding: 3px 0 1px 0;" v-model="searchkey" type="text" placeholder="搜索中文名">
-					<button @click="search">搜索</button>
-					<button @click="remove(index)">删除</button>
-					<label>{{ tip }}</label>
-				</div>
-				<table>
-					<thead>
-					  <tr>
-					  	<th style="width: 30px;"></th>
-					  	<th style="width: 40px;">序号</th>
-					  	<th style="min-width: 50px;max-width: 150px;">名称</th>
-					  	<th style="min-width: 50px;max-width: 150px;">索引</th>
-					  	<th style="min-width: 50px;max-width: 150px;">分组</th>
-					  	<th style="width: 50px;">操作</th>
-					  	<th style="width: 50px;"></th>
-					  </tr>
-					</thead>
-					<tbody>
-						<tr v-for="(item, index) in filteredItems" :key="item.name" :class="{ selected: isSelected(item) }">
-							<template v-if="ids !== index">
-								<td><input type="checkbox" v-model="selectedItems" :value="item"></td>
-								<td>{{ index + 1 }}</td>
-								<td>{{ item.cnname }}</td>
-								<td>{{ item.name }}</td>
-								<td>{{ item.zu }}</td>
-								<td><button @click="edit(index,item)">编辑</button></td>
-								<td><button @click="play(item)">测试</button></td>
-							</template>
-							<template v-else>
-								<td><input type="checkbox" v-model="selectedItems" :value="item"></td>
-								<td>{{ index + 1 }}</td>
-								<td><input type="text" v-model="item.cnname"></td>
-								<td><input type="text" v-model="item.name"></td>
-								<td><input type="text" v-model="item.zu"></td>
-								<td><button @click="save(index,item)">保存</button></td>
-								<td><button @click="back(index,item)">取消</button></td>
-							</template>
-						</tr>
-					</tbody>
-				</table>
-			</div>
-		</div>
-	</div>
-	<div>
-	    <svg class="hans-container" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 24 150 28" preserveAspectRatio="none">
-	        <defs>
-	            <path id="hans-wave" d="M-160 44c30 0 58-18 88-18s 58 18 88 18 58-18 88-18 58 18 88 18 v44h-352z"></path>
-	        </defs>
-	        <g class="hans-parallax">
-	            <use xlink:href="#hans-wave" x="50" y="0" fill="rgba(77,123,231,.8)"></use>
-	            <use xlink:href="#hans-wave" x="50" y="3" fill="rgba(53,103,143,.8)"></use>
-	            <use xlink:href="#hans-wave" x="50" y="6" fill="rgba(82,183,234,.8)"></use>
-	        </g>
-	    </svg>
-	</div>
-	<script>
-	const live = {
-		data() {return {
-			tab:"tab1",tips:"",tip:"",searchkey: '',ids:'',txt:{update:'',lives:''},
-			adds:{cnname:"",name:"",zu:"",m3u:""},edits:{},selectedItems: [],items: []
-		}},
-		computed: {
-			filteredItems() {
-				if (Object.keys(this.items).length > 0){
-					return this.items.filter( item => item.cnname.includes(this.searchkey) );
-				}
-			}
-		},
-		mounted(){
-			that = this;
-			axios.get('/news').then(function (response) {
-				that.txt = response.data
-			})
-		},
-		methods: {
-			tabs(e){
-				let el=e.target.id;
-				if (el != ""){this.tab=el}
-			},
-			newtv(){
-				axios.get('/newtv').then(function (response) {
-					that.txt = response.data
-				})
-			},
-			check(){
-				this.txt.update = "检测中...";
-				axios.post('/checks', {'txt': this.txt.lives,'fp':'0'}).then(response => {
-				    // 处理响应数据
-				    that.txt = response.data;
-				  });
-			},
-			play(item){
-				window.open('./test/'+item.name, '_blank');
-			},
-			add(){
-				this.tips="数据提交中请稍后..."
-				that=this;
-				axios.post('/data', that.adds).then(function (response) {
-					that.tips = response.data == 404 ? "资源失效！" : "提交完成！";
-				}).catch(function (error) {
-					that.tips = "提交失败！"
-				});
-			},
-			cleartxt(){
-				this.txt.lives="";
-			},
-			clear(){
-				this.adds.cnname="";
-				this.adds.name="";
-				this.adds.zu="";
-				this.adds.m3u="";
-			},
-			addauto(){
-				if (this.items.length == 0){
-					that = this;
-					axios.post('/data',{'auto':'yes'}).then(function (response) {
-						that.items = response.data
-					}).catch(function (error) {
-						that.tip = "查询失败！"
-					});
-				}
-			},
-			search() {
-				if (this.searchkey.length == 0){
-					this.tip="请输入内容后搜索！";
-					return
-				}
-				that=this;
-				axios.post('/data', {'search':that.searchkey}).then(function (response) {
-					console.log(response.data)
-					that.items = response.data
-				}).catch(function (error) {
-					that.tips="提交失败！"
-				});
-			},
-			edit(index,item) {
-				this.ids = index;
-				this.edits = JSON.parse(JSON.stringify(item));
-			},
-			save(index,item) {
-				that = this;
-			    axios.post('/data',item).then(function (response) {
-			    	if (response.data == "数据变更失败"){
-			    		that.filteredItems[index] = that.edits;
-			    		that.tip = '数据保存失败！';
-			    	}else{
-			    		that.tip = '数据保存成功！';
-			    	}
-			    }).catch(function (error) {
-			    	that.filteredItems[index] = that.edits;
-					that.tip = '网络错误！'
-				});
-				that.ids="";
-			},
-			back(index) {
-				this.ids="";
-				this.edits={};
-			},
-			remove() {
-				if (this.selectedItems.length==0){
-					this.tip='未选择数据！';
-					return
-				}else{
-					 if (Object.keys(this.edits).length != 0 ){return}
-				}
-				that = this;
-				axios.post('/data',that.selectedItems).then(function (response) {
-					that.tip = response.data
-				}).catch(function (error) {
-					that.tip="提交失败！"
-				});
-				this.items = this.items.filter(item => !this.selectedItems.includes(item));
-				this.selectedItems = []; // 清空已选中的项目
-			},
-			isSelected(item) {
-				return this.selectedItems.includes(item);
-			},
+  <div id="apptv">
+    <h1>直播管理</h1>
+    <div class="nav" @click="tabs">
+      <div id="tab1" :class="{ 'active': tab == 'tab1' }">直播列表</div>
+      <div id="tab2" :class="{ 'active': tab == 'tab2' }">添加节目</div>
+      <div id="tab3" :class="{ 'active': tab == 'tab3' }" @click="addauto">管理节目</div>
+    </div>
+    <div id="nav-tab">
+      <div v-if="tab =='tab1'">
+        <div><label style="padding:0 10px;">最近更新日期：{{ txt.update }}</label></div>
+        <div>
+          <button @click="newtv">自建频道</button>
+          <button @click="check">直播源检测</button>
+          <button @click="cleartxt">全部清空</button>
+          <button @click="savetxt" :disabled="!canSubmit">保存修改</button>
+        </div>
+        <textarea rows="28" v-model="txt.lives" @input="checkSize" placeholder="多行文本输入……"></textarea>
+        <p class="stats">当前大小: {{ byteSize }} KB / 最大5MB<span v-if="error" class="error">{{ error }}</span></p>
+      </div>
+      <div v-if="tab =='tab2'">
+        <div>
+          <label>名称:</label>
+          <input type="text" v-model="adds.cnname" required placeholder="节目中文名称……">  
+        </div>
+        <div>
+          <label>索引:</label>
+          <input type="text" v-model="adds.name" required placeholder="字母数字命名……">
+        </div>
+        <div>
+          <label>分组:</label>
+          <input type="text" v-model="adds.zu" placeholder="频道名称……">
+        </div>
+        <div>
+          <div style="margin:8px 0;">
+            <span style="padding-right: 130px;">请写入完整地址</span>
+            <button @click="add">提交</button>
+            <button @click="clear">清空</button>
+            <div>{{ tips }}</div>
+          </div>
+          <textarea rows="25" v-model="adds.m3u" placeholder="仅支持m3u8类型"></textarea>
+        </div>
+      </div>
+      <div v-if="tab =='tab3'">
+        <div>
+          <input style="padding: 3px 0 1px 0;" v-model="searchkey" type="text" placeholder="搜索中文名">
+          <button @click="search">搜索</button>
+          <button @click="remove(index)">删除</button>
+          <button @click="vacuum">收缩</button>
+          <label>{{ tip }}</label>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px;"></th>
+              <th style="width: 40px;">序号</th>
+              <th style="min-width: 50px;max-width: 150px;">名称</th>
+              <th style="min-width: 50px;max-width: 150px;">索引</th>
+              <th style="min-width: 50px;max-width: 150px;">分组</th>
+              <th style="width: 50px;">操作</th>
+              <th style="width: 50px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(item, index) in filteredItems" :key="item.name" :class="{ selected: isSelected(item) }">
+              <template v-if="ids !== index">
+                <td><input type="checkbox" v-model="selectedItems" :value="item"></td>
+                <td>{{ index + 1 }}</td>
+                <td>{{ item.cnname }}</td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.zu }}</td>
+                <td><button @click="edit(index,item)">编辑</button></td>
+                <td><button @click="play(item)">测试</button></td>
+              </template>
+              <template v-else>
+                <td><input type="checkbox" v-model="selectedItems" :value="item"></td>
+                <td>{{ index + 1 }}</td>
+                <td><input type="text" v-model="item.cnname"></td>
+                <td><input type="text" v-model="item.name"></td>
+                <td><input type="text" v-model="item.zu"></td>
+                <td><button @click="save(index,item)">保存</button></td>
+                <td><button @click="back(index,item)">取消</button></td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <script>
+  const post = async (url, data, ok='', errors='请求失败') => {
+    try {
+      const response = await axios.post(url, data);
+      return response.data ? ok || response.data : errors;
+    } catch (error) {
+      return errors;
+    }
+  };
+  const live = {
+    data() {return {
+      tab:'tab1',tips:'',tip:'',searchkey:'',ids:'',txt:{update:'',lives:''},error:'',
+      adds:{cnname:'',name:'',zu:'',m3u:''},edits:{},selectedItems: [],items: []
+    }},
+    computed: {
+      byteSize() {
+        return (new Blob([this.txt.lives]).size / 1024).toFixed(2)
+      },
+      canSubmit() {
+        return this.txt.lives.length > 0 && !this.error
+      },
+      filteredItems() {
+        if (Object.keys(this.items).length > 0){
+          return this.items.filter( item => item.cnname.includes(this.searchkey) );
+        }
+      }
+    },
+    mounted() {
+      axios.get('/news').then(response => {this.txt = response.data });
+    },
+    methods: {
+      tabs(e){
+        let el = e.target.id;
+        if (el != ''){this.tab=el};
+      },
+      newtv(){
+        axios.get('/newtv').then(response => { this.txt = response.data })
+      },
+      async check(){
+        this.txt.update = "检测中...";
+        this.txt = await post('/checks', {'txt': this.txt.lives,'fp':'0'})
+      },
+      play(item){
+        window.open('./test/'+item.name, '_blank');
+      },
+      async add(){
+        this.tips = "数据提交中请稍后...";
+        this.tips = await post('/data', this.adds,'','m3u8资源失效,请检查！');
+      },
+      checkSize() {
+        const bytes = new Blob([this.txt.lives]).size
+        this.error = bytes > 5*1024*1024 ? '文件超过5MB限制' : ''
+      },
+      async savetxt(){
+        this.txt.update = "数据提交中...";
+        const form = new FormData()
+        form.append('txt', this.txt.lives)
+        this.txt.update = await post('/savetxt',form,'','修改失败！')
+      },
+      cleartxt(){
+        this.txt.lives = '';
+      },
+      clear(){
+        this.adds = {cnname:'',name:'',zu:'',m3u:''};
+      },
+      async vacuum(){
+        this.tip = await post('/data',{'vacuum':'yes'},'操作完成！','操作失败！')
+      },
+      async addauto(){
+        if (this.items.length == 0){
+          this.items = await post('/data',{'auto':'yes'})
+          this.tip = Array.isArray(this.items) ? '查询完成！' : '查询失败！'
+        }
+      },
+      async search() {
+        this.tip = this.searchkey || "请输入内容后搜索！"
+        this.items = await post('/data',{search: this.searchkey})
+        this.tip = Array.isArray(this.items) ? '' : '查询失败！'
+      },
+      edit(index,item) {
+        this.ids = index;
+        this.edits = JSON.parse(JSON.stringify(item));
+      },
+      async save(index,item) {
+        this.tip = await post('/data',item,'保存成功！','保存失败！')
+        this.edits = this.filteredItems[index];
+        this.ids = '';
+      },
+      back(index) {
+        this.ids = '';
+        this.edits = {};
+      },
+      async remove() {
+        if (this.selectedItems.length==0 || Object.keys(this.edits).length != 0 ){ return }
+        this.tip = await post('/data',this.selectedItems)
+        this.items = this.items.filter(item => !this.selectedItems.includes(item));
+        this.selectedItems = []; // 清空已选中的项目
+      },
+      isSelected(item) {
+        return this.selectedItems.includes(item);
+      },
 
-		}
-	};
-	Vue.createApp(live).mount('#apptv');
-	</script>
+    }
+  };
+  Vue.createApp(live).mount('#apptv');
+  </script>
 </body>
 </html>
