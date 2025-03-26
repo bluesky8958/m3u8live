@@ -1,9 +1,12 @@
 #coding:utf-8
-import requests,re,json,time,sqlite3,datetime
+import requests,re,json,time,os,sqlite3,datetime
 from urllib.parse import quote
-from bottle import route, run,static_file,request,post,response,error
+from bottle import Bottle,request,response,static_file,run
+app = Bottle()
+response.set_header('Access-Control-Allow-Origin','*')
+host='http://www.qianzai56.com:88'
 head={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.87 Safari/537.36 SE 2.X MetaSr 1.0'}
-host='http://kaide.dynv6.net:88'
+cross={'Content-Type':'application/x-mpegurl,video/mp2t','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers': '*','Access-Control-Allow-Methods': '*'}
 player=r'''<!DOCTYPE html>
 <html>
     <head>
@@ -21,24 +24,26 @@ player=r'''<!DOCTYPE html>
         </script>
     </body>
 </html>''' 
-#---------------------------------------------tv live function------------------------------------------------
+#---------------------------------------------tv live function---------------------------------
 def sql(db='',tag=1): #tag 0.未建表 1.已建表
-    if db=='':return "无操作！"
+    if tag == 0:return "未建表！"
     sqlite=sqlite3.connect('./tv.db') #连接数据库
     sqlite.row_factory = sqlite3.Row
-    try:
-        cur=sqlite.cursor()
-        data = cur.execute(db).fetchall()
-        if len(data) > 0:
-            data=json.dumps([dict(d) for d in data])
-    except:
-        data = "数据变更失败"
-    finally:
-        sqlite.commit()
-        sqlite.close()
+    cur=sqlite.cursor()
+    if db == 'VACUUM':
+        cur.execute(db)
+        data = '数据库收缩完成！'
+    else:
+        try:
+            data = cur.execute(db).fetchall()
+            if len(data) > 0: data = json.dumps([dict(d) for d in data])
+        except sqlite3.Error as e:
+            data = ''
+    sqlite.commit()
+    sqlite.close()
     return data
 
-def theading(func,vals,work=10):
+def theading(func,vals,work=20):
     runok = []
     if len(vals)==0:return runok
     import concurrent.futures as futures
@@ -47,7 +52,7 @@ def theading(func,vals,work=10):
         for thead in futures.as_completed(threads):
             url = threads[thead]
             result = (thead.result(),vals.index(url))
-            if result:runok.append(result)
+            if result and result[0] != 404:runok.append(result)
     runok.sort(key=lambda x: x[1])  # 根据初始顺序排序
     return runok
 
@@ -56,11 +61,10 @@ def check(txt,fp='0'):
         if url.find('#genre#') != -1:return url
         try:
             res = requests.head(url.split(',')[1].strip(),headers=head,timeout=7)
-            if res.status_code == 200:
-                return url
+            if res.status_code == 200: return url
         except:
-            return None
-    if fp != '1':
+            return 404
+    if fp == '0':
         lines = txt.split('\n')
     else:
         with open(txt, "r",encoding="utf8") as file:
@@ -69,15 +73,13 @@ def check(txt,fp='0'):
     lines = [url[0] for url in runok]
     if fp == '1':
         with open(txt, "w",encoding="utf8") as file:
-            file.writelines(lines)
+            file.writelines(lines+'\n')
     return lines
 
-def tss(uts,types='no'): #ts切片序列简化和还原
-    tp = types.split("|")
-    tp0 = tp[0]
-    if tp0=='no':
-        ts = uts.split(".")[0]
-        ext = uts.split(".")[1]
+def tss(uts,types='no||'): #ts切片序列简化和还原
+    t0,t1,t2 = types.split("|")
+    if t0=='no':
+        ts,ext = uts.split(".")
         if ts.isalnum() and ts[-1]=='0':
             if ts[-3:-1]=='00':
                 return 'sn|{}|{}'.format(ts[:-3],ext) #定长字母数字组合
@@ -88,17 +90,17 @@ def tss(uts,types='no'): #ts切片序列简化和还原
             return 'mn|{}|{}'.format(len(ts),ext) #定长数字组合
         else:
             return 'aa|all|{}'.format(ext) #随机序列组合
-    elif tp0=='nn':
-        return '{}.{}'.format(uts,tp[2])
-    elif tp0=='mn':
-        return "{:0>{}}.{}".format(uts,tp[1],tp[2])
-    elif tp0=='sn':
-        return tp[1]+"{:0>{}}.{}".format(uts,3,tp[2])
-    elif tp0=='an':
-        return '{}{}.{}'.format(tp[1],uts,tp[2])
-    elif tp0=='aa':
-        ts=json.loads(tp[1])
-        return '{}.{}'.format(ts[uts],tp[2])
+    elif t0=='nn':
+        return '{}.{}'.format(uts,t2)
+    elif t0=='mn':
+        return "{:0>{}}.{}".format(uts,t1,t2)
+    elif t0=='sn':
+        return t1+"{:0>{}}.{}".format(uts,3,t2)
+    elif t0=='an':
+        return '{}{}.{}'.format(t1,uts,t2)
+    elif t0=='aa':
+        ts=json.loads(t1)
+        return '{}.{}'.format(ts[uts],t2)
 
 def tsu(res,rec,url="",doc=""): #ts切片url补全
     if doc.find(res) != -1:
@@ -125,34 +127,41 @@ def tsp(data,pag):
 def m3u8(u):
     data={}
     u = quote(u).replace('%3A//','://') #链接中文编码
-    req = requests.get(u,headers=head,timeout=6)
-    if req.status_code == 200:
-        doc = req.text
-    else:
+    try:
+        doc = requests.get(u,headers=head,timeout=10).text
+        u2 = tsu('#EXT-X-STREAM-INF','\s(.*m3u8)',u,doc) #判断二级列表
+        if u2 != u:doc = requests.get(u2,headers=head,timeout=6).text
+    except:
         return 404
-    u2 = tsu('#EXT-X-STREAM-INF','\s(.*m3u8)',u,doc) #判断二级列表
-    if u2 != u:doc = requests.get(u2,headers=head,timeout=6).text
-    vals = re.compile('\s(.*\.[A-z]+\S*)\s').findall(doc)[:2] #获取key,ts链接
-    k = tsu('#EXT-X-KEY','"(.*\.key)"',u2,vals[0]) #判断是否加密
-    if k == u2:
+    tt = re.compile(r'#EXTINF:(.*?),\s+(.*?)(\w+\.\w+)\s',re.M).findall(doc)#获取ts
+    if len(tt) == 0:return 404
+    kk = re.compile('#EXT-X-KEY.*URI=".*\S').findall(doc) #判断是否加密
+    if len(kk) == 0:
         data['aes'] = ['no','']
     else:
-        k_name = re.compile('"(.*\.key)"').findall(vals[0])[0]
-        vals[0] = '\n'+vals[0].replace(k_name,'{}')+'\n'
+        k = tsu('#EXT-X-KEY','"(.*\.key)"',u2,kk[0]) #获取加密链接
+        k_name = re.compile('"(.*\.key)"').findall(kk[0])[0]
+        kk = '\n'+kk[0].replace(k_name,'{}')+'\n'
         try:
             k_val=requests.get(k,headers=head).content.decode('utf-8') #获取key秘钥
-            data['aes'] = [vals[0],'/keys/'+k_val]
+            data['aes'] = [kk,'/keys/'+k_val]
         except:
-            data['aes'] = [vals[0],re.compile('.*/').findall(u2)[0]+k_name]
-    ts_url = tsu('.',r'.*\.\w+',u2,vals[1]) #获取ts切片链接
+            data['aes'] = [kk,re.compile('.*/').findall(u2)[0]+k_name]
+    mu = [x[1] for x in tt]
+    murl = max(set(mu),key=mu.count)#根据url去广告
+    if mu.count(murl) != len(mu):
+        tt_ts = [(float(x[0]),x[2]) for x in tt if x[1]==murl]#ts时间,ts名称[]
+    else:
+        mt = [x[2][:-7] for x in tt]
+        mts = max(set(mt),key=mt.count)#根据名称去广告
+        tt_ts = [(float(x[0]),x[2]) for x in tt if x[2][:-7]==mts] if mt.count(mts) !=1 else [(float(x[0]),x[2]) for x in tt]#ts时间,ts名称[]
+
+    data['tt'],dts = list(map(list, zip(*tt_ts)))
+    ts = tss(dts[0]) #分析ts切片名称组合
+    ts_url = tsu('.',r'.*\.\w+',u2,murl+dts[0]) #获取ts切片链接
     data['host'] = re.compile('.*//.*?/').findall(ts_url)[0] #存储切片host[]
     data['uri'] = re.compile(r'\w/(.*/)').findall(ts_url)[0] #存储切片uri[]
-    tst = re.compile(r'#EXTINF:(.*?),\s+(.*?)(\w+\.\w+)\s',re.M).findall(doc)
-    ts = tss(tst[0][2]) #分析ts切片名称组合
-    tst = [(float(x),z.split('.')[0]) for x,y,z in tst if y == tst[0][1]] #去除插入的广告，根据第一个切片路径判断
-    if re.search(r'\w*?\d{3,}$',tst[0][1]):tst = [(x,y) for x,y in tst if y[:-3]==tst[0][1][:-3]] #去除同链接广告
-    data['ts'] = ts if ts[:2] != 'aa' else ts.replace('all',json.dumps([y for x,y in tst])) #存储ts切片名称组合[]/全部ts切片名称[]
-    data['tt'] = [x for x,y in tst] #存储ts切片时间序列[]
+    data['ts'] = ts if ts[:2] != 'aa' else ts.replace('all',json.dumps([x.split('.')[0] for x in dts])) #存储ts切片名称组合[]/全部ts切片名称[]
     data['total'] = round(sum(data['tt']),4) #储存单集总长[]
     data['dur'] = re.compile(r'DURATION:(\d*)').findall(doc)[0] #最大切片时长
     return data
@@ -163,8 +172,8 @@ def hls(name,cnname,zu,m3u):
     datas = [name,cnname,zu,'',[],[],[],[],[],[],[],[]] #3.start 4.total 5.aes 6.ts 7.uri 8.tt 9.dur 10.host 11.seg
     res=re.compile(r'http.*?\.m3u8').findall(m3u) #分集m3u8地址
     data = theading(m3u8,res)
-    if data==[] or data.count(404)>0:
-        return 404
+    if data==[]:
+        return ''
     else:
         [datas[i].append(d[0][v]) for d in data for i,v in zip(range(4,11),['total','aes','ts','uri','tt','dur','host'])]
     datas[3] = time.time() #标记启动时间
@@ -179,7 +188,7 @@ def hls(name,cnname,zu,m3u):
         datas[d]=json.dumps(datas[d])
     return datas
 
-def live(name):
+def live(name,srs=''):
     db=sql("SELECT * FROM TV WHERE name = '{}';".format(name))
     datas = json.loads(db)[0]
     total = json.loads(datas['total'])
@@ -202,11 +211,21 @@ def live(name):
         at = at - t
         if at < 0:
             n = j
-            break  
+            break 
+    txt = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-TARGETDURATION:{}'.format(json.loads(datas['dur'])[pag])
+    if srs == 'vod.m3u8':
+        vod = ''
+        for p in range(pag,len(total)):
+            if p > pag: n,dd = 0,tsp(datas,p)
+            ext = dd[2]+'#EXT-X-DISCONTINUITY\n' if n==0 else dd[2]+''
+            for nt in range(n,len(dd[3])):
+                ext = ext +'\n#EXTINF:{},\n{}{}'.format(dd[3][nt],dd[0],tss(nt,dd[1]))
+            vod = vod + ext
+        return (txt.replace('EVENT','VOD')+ vod +'\n#EXT-X-ENDLIST').encode('utf-8')
+
     seg = json.loads(datas['seg'])
     seg = circle*seg.pop()+seg[pag]+n   #当前切片数=循环次数*切片总数+之前分集切片总数+当前切片数
     exd = '#EXT-X-DISCONTINUITY\n' if n==0 and pag==0 else ''
-    txt = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-TARGETDURATION:{}'.format(json.loads(datas['dur'])[pag])
     ext = dd[2]+exd+'#EXT-X-MEDIA-SEQUENCE:{}\n'.format(int(seg)) #存在加密则加入解密标签,初始ts片段
     for nt in range(n,n+3):
         try:
@@ -222,35 +241,33 @@ def live(name):
     return (txt+ext).encode('utf-8')
 
 def newlive():
-    data=['http://home.jundie.top:81/Cat/tv/live.txt',
+    data=[
+    'https://ghproxy.net/raw.githubusercontent.com/PizazzGY/TV/master/output/user_result.txt',
+    'https://gitee.com/qingyue-yuan/ye/raw/master/TVBox/live.txt',
+    'http://mdxgh.tpddns.cn:9999/new/mdzb.txt',
+    'http://home.jundie.top:81/Cat/tv/live.txt',
+    'http://175.178.251.183:6689/live.txt',
+    'http://yuan.haitangw.net/ZB/',
+    'https://9xi4o.tk/OneClickRun/live.txt',
+    'https://live.zbds.top/tv/iptv4.txt',
+    'https://live.zbds.top/tv/iptv6.txt',
     'https://szyyds.cn/tv/live/x.txt',
-    'https://tv.lan2wan.top/live.txt',
-    'http://sinopacifichk.com/box/live.txt',
-    'http://152.32.170.60/Yoursmile7/TVBox/raw/branch/master/live.txt',
-    'http://%E6%88%91%E4%B8%8D%E6%98%AF.%E8%82%A5%E7%8C%AB.live/TV/tvzb.txt', 
-    'https://github.moeyy.xyz/https://raw.githubusercontent.com/dxawi/0/main/tvlive.txt',
-    'https://download.kstore.space/download/2883/20240210.txt',
-    'https://github.moeyy.xyz/https://raw.githubusercontent.com/lystv/short/main/%E5%BD%B1%E8%A7%86/tvb/MTV.txt']
+    'https://bitbucket.org/xduo/duoapi/raw/master/v.txt',
+    'https://github.moeyy.xyz/https://raw.githubusercontent.com/lystv/short/main/影视/tvb/MTV.txt',
+    'https://g.3344550.xyz/https://raw.githubusercontent.com/SCXSVIP/TV/main/live.txt',
+    'https://ghproxy.net/raw.githubusercontent.com/kunkka1986/my.img/main/frjzb240624.txt'
+    ]
     for u in data:
-        try:
-            res=requests.get(u)
-            if res.status_code==200: 
-                return res.content.decode('utf-8')
-        except:
-            return ''
-#--------------------------------------------tv live route---------------------------------------------------
-@route('/checks')
-@post('/checks')
-def checks():
-    vals =dict(request.query.decode("utf-8")) if request.method == 'GET' else request.json
-    lines = check(**vals)
-    update = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())+' 检测完成'
-    data = {'update':update,'lives':'\n'.join(lines)}
-    return data
-
-@route('/data')
-@post('/data')
-def data():
+        res=requests.get(u,timeout=10)
+        if res.status_code==200:
+            return res.content.decode('utf-8')
+        else:
+            continue
+    return '链接全部失效'
+#--------------------------------------------tv live route------------------------------------
+@app.route('/data')
+@app.post('/data')
+def data(db=''):
     d =dict(request.query.decode("utf-8")) if request.method == 'GET' else request.json
     if type(d) == dict:
         kk=d.keys()
@@ -262,19 +279,19 @@ def data():
             ids= d.pop('id')
             sets=','.join(["{} = '{}'".format(k,v) for k,v in d.items()])
             db="UPDATE TV SET {} WHERE id = {};".format(sets,ids)
+        elif 'vacuum' in kk:#收缩数据库
+            db = 'VACUUM'
         elif 'm3u' in kk:#初始化m3u8文件
             dd=str(hls(**d)).replace('\\\\','\\')
-            if dd == '404':
-                return 404
-            else:
-                db="INSERT INTO TV (name,cnname,zu,start,total,aes,ts,uri,tt,dur,host,seg) VALUES ({});".format(dd[1:-1])
+            db="INSERT INTO TV (name,cnname,zu,start,total,aes,ts,uri,tt,dur,host,seg) VALUES ({});".format(dd[1:-1])
     else: #删除数据
         names=[li['name'] for li in d]
         db="DELETE FROM TV WHERE name IN ({});".format(str(names)[1:-1])
     data=sql(db)
-    return data 
+    if data == []:data='提交完成！'
+    return data
 
-@route('/tvsql')
+@app.route('/tvsql')
 def tvsql():
     db='''CREATE TABLE TV (
         id   INTEGER      PRIMARY KEY AUTOINCREMENT,
@@ -287,72 +304,109 @@ def tvsql():
     sql(db,0)
     return '数据库创建成功!'
 
-@route('/keys/<aes>')
+@app.route('/keys/<aes>')
 def keys(aes):
-    response.headers['Access-Control-Allow-Origin'] = '*'
     return aes
 
-@route('/news')
+@app.route('/checks')
+@app.post('/checks')
+def checks():
+    vals =dict(request.query.decode("utf-8")) if request.method == 'GET' else request.json
+    lines = check(**vals)
+    update = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())+' 检测完成'
+    data = {'update':update,'lives':'\n'.join(lines)}
+    return data
+    
+@app.post('/savetxt')
+def savetxt():
+    try:
+        text = request.forms.get('txt', '')
+        if not text: return '文本内容不能为空'
+        text = [line+'\n' for line in text.split('\r\n') if line.strip()]
+        with open('./static/tv/live/live.txt', 'w', encoding='utf-8') as f:
+            f.writelines(text)
+    except Exception as e:
+        return str(e)
+    return '数据修改成功！'
+
+@app.route('/news')
 def news(apply=""):
     try:
+        first = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(r'./static/tv/live/live.txt')))
         with open('./static/tv/live/live.txt', "r",encoding="utf-8") as file:
-            lines = file.readlines()
-            first = lines[0].strip()[3:-8]
-            txt = "".join(lines[1:]).strip()
+            txt = file.read()
         return {'update':first,'lives':txt}
     except:
         return {'update':'无更新','lives':'无数据,请点击自建频道更新'}
 
-@route('/newtv')
+@app.route('/live')
+def ailive():
+    url='https://ghproxy.net/raw.githubusercontent.com/PizazzGY/TV/master/output/user_result.txt'
+    response.Content_type='text/html; charset=utf-8'
+    res=requests.get(url,timeout=5)
+    res=res.content.decode('utf-8') if res.status_code==200 else ''
+    with open('./static/tv/live/new.txt',"r",encoding="utf-8") as file:
+        txt = file.read() + res
+    return txt
+
+@app.route('/newtv')
 def newtv():
-    update = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    first = '更新：{},#genre#\n'.format(update)
-    db='SELECT name,cnname,zu FROM TV'
+    db = 'SELECT name,cnname,zu FROM TV;'
     data=json.loads(sql(db))
+    data=sorted(data, key=lambda data:data["cnname"],reverse=True)
     db,txt = {},''
     for dd in data:
         zu = '{},#genre#\n'.format(dd['zu'] )
         name = '{},{}/play/{}/index.m3u8\n'.format(dd['cnname'],host,dd['name'])
-        if zu in db.keys():
-            db[zu] = db[zu] + name
-        else:
-            db[zu] = name
+        name += '{},{}/play/{}/vod.m3u8\n'.format(dd['cnname'],host,dd['name'])
+        db[zu] = db[zu] + name if zu in db.keys() else name
     for k,v in db.items():
         txt = txt + k +v
-    with open('./static/tv/live/live.txt',"w",encoding="utf-8") as file:
-        file.write(first+txt+newlive())
+    with open('./static/tv/live/live.txt',"w",encoding="utf-8",newline='\r\n') as flive,open('./static/tv/live/new.txt',"w",encoding="utf-8",newline='\r\n') as fnew:
+        flive.write(txt+newlive())
+        fnew.write(txt)
+    update = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     return {'update':update,'lives':txt}
 
-@route('/play/<names>/index.m3u8')
-def play(names):
-    m3u8=live(names)
-    response.headers.update({
-    'Content-Type':'application/x-mpegurl,video/mp2t',
-    'Access-Control-Allow-Origin':'*',
-    'Access-Control-Allow-Headers': '*',
-    'Access-Control-Allow-Methods': '*'
-    })
+@app.route('/play/<names>/<srs>')
+def play(names,srs):
+    m3u8=live(names,srs)
+    response.headers.update(cross)
     return m3u8
 
-@route('/test/<names>')
+@app.route('/test/<names>')
 def test(names):
-    response.headers.update({'Access-Control-Allow-Origin':'*'})
     if len(names)>1 and names[:4] == "url=":
         url=names[4:]
     else:
         url='../play/{}/index.m3u8'.format(names)
     return player.format(url)
 
-@error(404)
+@app.route('/vods')
+def vods():
+    response.headers.update(cross)
+    try:
+        url = dict(request.query.decode("utf-8"))['url']
+        data=m3u8(url)
+        txt = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:{}'.format(data['dur'])
+        aes = data['aes']
+        if aes != ['no','']:txt = txt + aes[0].format(aes[1])
+        u = data['host'] + data['uri']
+        for n in range(len(data['tt'])):
+            txt = txt +'\n#EXTINF:{},\n{}{}'.format(data['tt'][n],u,tss(n,data['ts']))
+        return txt + '\n#EXT-X-ENDLIST'
+    except:
+        return 'url参数错误'
+
+@app.error(404)
 def error404(error):
     return static_file('404.html',root='./static/')
 
-@route('/')
-@route('/<fp:re:.*\.\w+$(?<!\.py)>')
+@app.route('/')
+@app.route('/<fp:re:.*\.\w+$(?<!\.py)>')
 def server_static(fp='index.html'):
-    response.headers['Access-Control-Allow-Origin'] = '*'
     return static_file(fp, root='./static/')
 
 if __name__ == '__main__':
-    #第一次需要打开/tvsql初始化数据库,采集站https://ys.urlsdh.com量子资源http://lzizy.net暴风资源http://bfzy.tv
-    run(host='::',port=88, debug=True,server="paste",reloader=True)
+    #第一次需要打开/tvsql初始化数据库
+    run(app,host='::',port=88,server="waitress",threads=8,reloader=True,debug=True)
